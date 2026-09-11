@@ -108,7 +108,43 @@ export function ControlSidebar({
               Simple
             </button>
             <button
-              onClick={() => setSite({ ...site, activeMode: "advanced" })}
+              onClick={async () => {
+                // When switching TO advanced mode, inject activePage.bio into the stored Craft JSON
+                const storageKey = `craft_state_${activePage.slug}`;
+                const savedCraftJson = await loadCraftState(activePage.slug);
+
+                if (savedCraftJson) {
+                  try {
+                    const parsed = JSON.parse(savedCraftJson);
+                    let modified = false;
+
+                    const nodesObj = parsed.nodes || parsed;
+                    Object.keys(nodesObj).forEach((nodeId) => {
+                      const node = nodesObj[nodeId];
+                      const name = node.name || node.data?.name || node.type?.resolvedName || node.data?.type?.resolvedName;
+                      
+                      if (name === "CraftProfileInfo") {
+                        const props = node.props || node.data?.props;
+                        if (props) {
+                          const targetBio = activePage.bio || "";
+                          if (props.bio !== targetBio) {
+                            props.bio = targetBio;
+                            modified = true;
+                          }
+                        }
+                      }
+                    });
+
+                    if (modified) {
+                      localStorage.setItem(storageKey, JSON.stringify(parsed));
+                    }
+                  } catch (e) {
+                    console.error("Failed to sync bio to Craft state on mode switch:", e);
+                  }
+                }
+
+                setSite({ ...site, activeMode: "advanced" });
+              }}
               className={`px-3 py-1.5 rounded-md font-medium transition ${
                 site.activeMode === "advanced" ? "bg-neutral-100 text-neutral-950" : "text-neutral-400 hover:text-white"
               }`}
@@ -310,7 +346,20 @@ export function ControlSidebar({
         ) : (
           /* ================= ADVANCED MODE CONTROLS (CRAFT.JS INTEGRATED) ================= */
           <div className="flex flex-col gap-6">
-            
+            <>
+            <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-medium text-neutral-400">Background Color</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={activePage.backgroundColor}
+                    onChange={(e) => updateActivePage({ backgroundColor: e.target.value })}
+                    className="w-10 h-10 rounded cursor-pointer bg-transparent border border-neutral-800"
+                  />
+                  <span className="text-xs text-neutral-400 font-mono">{activePage.backgroundColor}</span>
+                </div>
+              </div>
+            </>
             {/* Template Selector Trigger */}
             <div className="p-4 rounded-xl bg-neutral-900/50 border border-neutral-800/60 space-y-3">
               <h2 className="text-sm font-semibold text-neutral-200">Layout & Templates</h2>

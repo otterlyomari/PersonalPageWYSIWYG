@@ -1,7 +1,7 @@
 // components/builder/LivePreview.tsx
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import { SiteConfig, SubPage } from "@/types/pageConfig";
 import { CraftLivePreview } from "./craft/CraftLivePreview";
 import { SocialIcons } from "@/components/builder/craft/SocialIcons";
@@ -48,26 +48,14 @@ export function LivePreview({
 }: LivePreviewProps) {
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
 
-  // Ensure active page is always natively resolved from the current site config slug
-  const activePage = site.pages.find((p) => p.slug === site.activePageSlug) || propActivePage;
-
-  // Sync craft elements on initial page load or mode toggle if serialized JSON exists
-  useEffect(() => {
-    if (activePage.craftState && typeof activePage.craftState === "string") {
-      const syncedPage = syncCraftToSimple(activePage.craftState, activePage);
-      // Compare contentBlocks/links to prevent unnecessary loop renders
-      if (JSON.stringify(syncedPage.contentBlocks) !== JSON.stringify(activePage.contentBlocks)) {
-        setSite((prev) => {
-          const updatedPages = prev.pages.map((p) => 
-            p.slug === activePage.slug ? syncedPage : p
-          );
-          const newSite = { ...prev, pages: updatedPages };
-          saveSimpleState(newSite);
-          return newSite;
-        });
-      }
+  // Dynamically resolve and sync active page state on the fly so contentBlocks are never stale
+  const activePage = React.useMemo(() => {
+    const basePage = site.pages.find((p) => p.slug === site.activePageSlug) || propActivePage;
+    if (basePage.craftState && typeof basePage.craftState === "string") {
+      return syncCraftToSimple(basePage.craftState, basePage);
     }
-  }, [activePage.slug]);
+    return basePage;
+  }, [site, site.activePageSlug, propActivePage]);
 
   // Wrapper that updates state and immediately triggers persistent storage safely
   const handleSiteUpdate = (newSite: SiteConfig | ((prev: SiteConfig) => SiteConfig)) => {
@@ -150,15 +138,54 @@ export function LivePreview({
                 );
               }
 
-              // 3. Link Card Block
+              // 3. Link Card Block (with fixed style precedence)
               if (block.type === "link") {
+                const styles = block.styles || {};
+                const tag = styles.tag || "p";
+                
+                // If fontSize is default or missing, fall back to the tag's theme size (e.g. h1 = 36px)
+                const rawFontSize = styles.fontSize && styles.fontSize !== "14px" 
+                  ? styles.fontSize 
+                  : (themeSizeMap[tag] || styles.fontSize || "14px");
+
+                const resolvedLinkFontSize = 
+                  typeof rawFontSize === "string" && rawFontSize.endsWith("px")
+                    ? rawFontSize
+                    : `${rawFontSize}px`;
+                
+                const styleOverrides: React.CSSProperties = {
+                  fontFamily: styles.fontFamily || "inherit",
+                  color: styles.textColor || undefined,
+                  fontSize: resolvedLinkFontSize,
+                  fontWeight: styles.fontWeight || undefined,
+                  fontStyle: styles.fontStyle || undefined,
+                  textAlign: styles.alignment || undefined,
+                  textDecoration: styles.textDecoration || undefined,
+                  textTransform: styles.textTransform as any || undefined,
+                  letterSpacing: styles.letterSpacing ? `${styles.letterSpacing}px` : undefined,
+                  lineHeight: styles.lineHeight ? styles.lineHeight : undefined,
+                };
+
+                if (styles.effect === "shadow") {
+                  styleOverrides.textShadow = `${styles.shadowX || 2}px ${styles.shadowY || 2}px ${styles.shadowBlur || 4}px ${styles.shadowColor || "rgba(0,0,0,0.6)"}`;
+                } else if (styles.effect === "outline") {
+                  const w = Number(styles.outlineWidth) || 1;
+                  (styleOverrides as any).WebkitTextStroke = `${w * 2}px ${styles.outlineColor || "#ffffff"}`;
+                  (styleOverrides as any).paintOrder = "stroke fill";
+                } else if (styles.effect === "glow") {
+                  styleOverrides.textShadow = `0 0 ${styles.glowSize || 10}px ${styles.glowColor || "#6366f1"}`;
+                }
+
+                const alignClass = alignmentMap[styles.alignment || "center"] || "text-center";
+
                 return (
                   <a
                     key={block.id}
                     href={block.url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="block w-full py-3 px-4 rounded-xl bg-white/10 hover:bg-white/25 transition font-medium text-sm border border-white/5 shadow-sm"
+                    style={styleOverrides}
+                    className={`block w-full py-3 px-4 rounded-xl bg-white/10 hover:bg-white/25 transition font-medium border border-white/5 shadow-sm ${alignClass} ${styles.className || ""}`}
                   >
                     {block.text}
                   </a>

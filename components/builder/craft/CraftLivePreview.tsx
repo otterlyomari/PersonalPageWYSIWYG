@@ -2,7 +2,7 @@
 "use client";
 
 import { Editor, Frame, Element, useEditor } from "@craftjs/core";
-import { CraftAvatar, CraftLinkCard, CraftContainer, CraftText, CraftProfileInfo } from "./UserComponents";
+import { CraftAvatar, CraftButton, CraftContainer, CraftText, CraftProfileInfo } from "./UserComponents";
 import { SocialIcons } from "./SocialIcons"; 
 import { SiteConfig, SubPage } from "@/types/pageConfig";
 import React, { useEffect, useRef } from "react";
@@ -33,7 +33,7 @@ export function CraftLivePreview({
   setIsSidebarCollapsed 
 }: CraftLivePreviewProps) {
   return (
-    <Editor resolver={{ CraftAvatar, CraftProfileInfo, CraftLinkCard, CraftContainer, CraftText, SocialIcons }}> 
+    <Editor resolver={{ CraftAvatar, CraftProfileInfo, CraftButton, CraftContainer, CraftText, SocialIcons }}> 
       <EditorContentManager 
         site={site} 
         setSite={setSite} 
@@ -172,7 +172,10 @@ function EditorContentManager({
               <Element canvas is={CraftContainer} background="transparent" padding={15}>
                 {/* Default starting elements if the canvas is completely empty */}
                 <CraftAvatar username={site.username} />
-                <CraftProfileInfo username={site.username} bio={activePage.bio || "No bio provided."} />
+                <CraftProfileInfo 
+                  username={site.username} 
+                  bio={activePage.bio && activePage.bio !== "No bio provided." ? activePage.bio : ""} 
+                />
                 <SocialIcons socials={site.socials || activePage.socials} />
               </Element>
             </Frame>

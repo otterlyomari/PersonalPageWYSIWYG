@@ -49,7 +49,11 @@ export function LayersTree() {
 
     const rawName = node.data.name || "";
     const baseName = node.data.custom?.userDefinedName || rawName.replace(/^Craft/, "").replace(/([A-Z])/g, " $1").trim();
-    const childIds = node.data.nodes || [];
+    
+    // Gather both standard children nodes and any internal linkedNodes
+    const standardChildIds = node.data.nodes || [];
+    const linkedChildIds = node.data.linkedNodes ? Object.values(node.data.linkedNodes) : [];
+    const allChildIds = [...standardChildIds, ...linkedChildIds];
 
     return (
       <div key={id} className="flex flex-col select-none">
@@ -60,7 +64,6 @@ export function LayersTree() {
             e.stopPropagation();
             actions.selectNode(id);
             
-            // Calculate position relative to the tree container or viewport safely
             const containerRect = containerRef.current?.getBoundingClientRect() || { top: 0, left: 0 };
             setContextMenu({
               id,
@@ -74,7 +77,7 @@ export function LayersTree() {
           style={{ paddingLeft: `${Math.max(8, depth * 16)}px` }}
         >
           <div className="flex items-center gap-2 truncate flex-1">
-            <span className="opacity-40 text-[9px]">{childIds.length > 0 ? "📂" : "📄"}</span>
+            <span className="opacity-40 text-[9px]">{allChildIds.length > 0 ? "📂" : "📄"}</span>
             {isRenaming ? (
               <input
                 autoFocus
@@ -93,10 +96,10 @@ export function LayersTree() {
           <span className="text-[9px] opacity-30 font-mono ml-2">{id.slice(0, 4)}</span>
         </div>
 
-        {/* Render Children Recursively */}
-        {childIds.length > 0 && (
+        {/* Render All Children Recursively (Standard Nodes + Linked Nodes) */}
+        {allChildIds.length > 0 && (
           <div className="flex flex-col space-y-1 mt-0.5 border-l border-white/5 ml-3 pl-1">
-            {childIds.map((childId) => renderTreeNode(childId, depth + 1))}
+            {allChildIds.map((childId) => renderTreeNode(childId, depth + 1))}
           </div>
         )}
       </div>

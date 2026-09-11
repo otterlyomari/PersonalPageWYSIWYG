@@ -5,7 +5,6 @@ const SIMPLE_STATE_KEY = "my_builder_simple_state";
 import { ContentBlock, SubPage } from "@/types/pageConfig";
 import { SiteConfig } from "@/types/pageConfig";
 
-// 1. Async wrapper for simple state
 export const loadSimpleState = async (defaultData: any) => {
   if (typeof window === "undefined") return defaultData;
   const saved = localStorage.getItem(SIMPLE_STATE_KEY);
@@ -14,25 +13,22 @@ export const loadSimpleState = async (defaultData: any) => {
 
 export const saveSimpleState = async (data: any): Promise<void> => {
   if (typeof window === "undefined") return;
-  
   await new Promise((resolve) => setTimeout(resolve, 150));
   localStorage.setItem(SIMPLE_STATE_KEY, JSON.stringify(data));
 };
 
-// 2. Debounced async wrapper for Craft.js JSON state per page slug
 let saveTimeout: NodeJS.Timeout;
 
 export const debouncedSaveCraftState = (jsonString: string, slug: string = "/"): Promise<void> => {
   return new Promise((resolve) => {
     if (saveTimeout) clearTimeout(saveTimeout);
-    
     saveTimeout = setTimeout(() => {
       if (typeof window !== "undefined") {
         const storageKey = `craft_state_${slug}`;
         localStorage.setItem(storageKey, jsonString);
       }
       resolve();
-    }, 1000); // 1-second debounce window
+    }, 1000);
   });
 };
 
@@ -52,6 +48,28 @@ export function syncCraftToSimple(craftJsonString: string, currentActivePage: Su
     let extractedBio = currentActivePage.bio;
 
     const visited = new Set<string>();
+    const skipNodeIds = new Set<string>();
+
+    const getComponentName = (node: any) => 
+      node?.name || 
+      node?.data?.name || 
+      node?.type?.resolvedName || 
+      node?.data?.type?.resolvedName || 
+      "Unknown";
+
+    Object.keys(nodes).forEach((nodeId) => {
+      const node = nodes[nodeId];
+      if (getComponentName(node) === "CraftButton") {
+        const linkedNodes = node.linkedNodes || node.data?.linkedNodes || {};
+        Object.values(linkedNodes).forEach((childId: any) => {
+          if (typeof childId === "string") skipNodeIds.add(childId);
+        });
+        const standardNodes = node.nodes || node.data?.nodes || [];
+        if (Array.isArray(standardNodes)) {
+          standardNodes.forEach((childId: string) => skipNodeIds.add(childId));
+        }
+      }
+    });
 
     function traverse(nodeId: string) {
       if (visited.has(nodeId)) return;
@@ -60,38 +78,80 @@ export function syncCraftToSimple(craftJsonString: string, currentActivePage: Su
       const node = nodes[nodeId];
       if (!node) return;
 
-      const componentName = 
-        node.name || 
-        node.data?.name || 
-        node.type?.resolvedName || 
-        "Unknown";
-
+      const componentName = getComponentName(node);
       const props = node.props || node.data?.props || {};
 
-      if (componentName === "CraftLinkCard") {
-        if (props.title) {
-          const linkItem = { id: nodeId, title: props.title, url: props.url || "#" };
-          extractedLinks.push(linkItem);
-          contentBlocks.push({
-            id: nodeId,
-            type: "link",
-            text: props.title,
-            url: props.url || "#",
-          });
+if (componentName === "CraftButton") {
+        let btnText = props.buttonText || props.text || "Click Me";
+        let textStyles: any = { ...props };
+
+        const allChildIds = [
+          ...(node.nodes || node.data?.nodes || []),
+          ...Object.values(node.linkedNodes || node.data?.linkedNodes || {})
+        ];
+
+        for (const childId of allChildIds) {
+          if (typeof childId === "string" && nodes[childId]) {
+            const childNode = nodes[childId];
+            const childName = getComponentName(childNode);
+            
+            if (childName === "CraftText") {
+              const cp = childNode.props || childNode.data?.props || {};
+              if (cp.text) btnText = cp.text;
+              
+              textStyles = {
+                ...textStyles,
+                ...cp,
+              };
+              break;
+            }
+          }
         }
+
+        // Explicitly resolve font size from child or parent fallback
+        const rawSize = textStyles.fontSize || textStyles.size || textStyles.textSize || props.fontSize;
+        if (rawSize !== undefined && rawSize !== null && rawSize !== "" && rawSize !== 0) {
+          textStyles.fontSize = (typeof rawSize === "number" || !isNaN(Number(rawSize))) ? `${rawSize}px` : rawSize;
+        }
+
+        const btnUrl = props.url || "#";
+        
+        extractedLinks.push({ id: nodeId, title: btnText, url: btnUrl });
+        contentBlocks.push({
+          id: nodeId,
+          type: "link",
+          text: btnText,
+          url: btnUrl,
+          styles: textStyles,
+        });
       } else if (componentName === "CraftProfileInfo") {
-        // Robust fallback checking props, then current page bio, defaulting to an empty string if nothing exists
-        const bioValue = props.bio || props.text || currentActivePage.bio || "";
-        if (bioValue.trim() !== "" && bioValue !== "No bio provided.") {
+        // If the stored node bio is missing, empty, or the old placeholder, fallback to the current page bio
+        const nodeBio = props.bio || props.text;
+        const hasValidBio = nodeBio && nodeBio !== "No bio provided." && nodeBio.trim() !== "";
+        
+        const bioValue = hasValidBio ? nodeBio : (currentActivePage.bio || "");
+
+        if (bioValue.trim() !== "") {
           extractedBio = bioValue;
         }
+        
+        // Ensure the node props themselves get updated with the clean bio value if it was a placeholder
+        if (!hasValidBio && currentActivePage.bio && currentActivePage.bio.trim() !== "") {
+          props.bio = currentActivePage.bio;
+        }
+
         contentBlocks.push({ id: nodeId, type: "profile", text: bioValue });
       } else if (componentName === "CraftAvatar") {
         contentBlocks.push({ id: nodeId, type: "avatar" });
       } else if (componentName === "SocialIcons") {
         contentBlocks.push({ id: nodeId, type: "socials" });
       } else if (componentName === "CraftText") {
-        if (props.text) {
+        if (!skipNodeIds.has(nodeId) && props.text) {
+          const rawSize = props.fontSize || props.size || props.textSize;
+          const normalizedFontSize = rawSize !== undefined && rawSize !== null && rawSize !== "" && rawSize !== 0
+            ? (typeof rawSize === "number" || !isNaN(Number(rawSize)) ? `${rawSize}px` : rawSize)
+            : undefined;
+
           contentBlocks.push({
             id: nodeId,
             type: "text",
@@ -102,7 +162,7 @@ export function syncCraftToSimple(craftJsonString: string, currentActivePage: Su
               fontFamily: props.fontFamily,
               alignment: props.alignment,
               textColor: props.textColor,
-              fontSize: props.fontSize,
+              fontSize: normalizedFontSize,
               fontWeight: props.fontWeight,
               fontStyle: props.fontStyle,
               textDecoration: props.textDecoration,
@@ -131,11 +191,17 @@ export function syncCraftToSimple(craftJsonString: string, currentActivePage: Su
         }
       }
 
-      // Traverse children in exact array sequence order
-      const childIds = node.data?.nodes || node.nodes || [];
+      const childIds = node.nodes || node.data?.nodes || [];
       childIds.forEach((childId: string) => {
         traverse(childId);
       });
+
+      const linkedNodes = node.linkedNodes || node.data?.linkedNodes;
+      if (linkedNodes) {
+        Object.values(linkedNodes).forEach((linkedId: any) => {
+          if (typeof linkedId === "string") traverse(linkedId);
+        });
+      }
     }
 
     if (nodes["ROOT"]) {
@@ -156,7 +222,6 @@ export function syncCraftToSimple(craftJsonString: string, currentActivePage: Su
   }
 }
 
-// Hydrate your initial site state on app boot
 export async function hydrateSiteWithCraftData(site: SiteConfig): Promise<SiteConfig> {
   const updatedPages = await Promise.all(
     site.pages.map(async (page) => {

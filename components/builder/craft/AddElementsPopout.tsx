@@ -2,7 +2,7 @@
 "use client";
 
 import { useEditor, Element } from "@craftjs/core";
-import { CraftAvatar, CraftLinkCard, CraftContainer, CraftText, CraftProfileInfo } from "./UserComponents";
+import { CraftAvatar, CraftButton, CraftContainer, CraftText, CraftProfileInfo } from "./UserComponents";
 import { useState, ReactElement, useEffect, useRef } from "react";
 
 interface AddElementsPopoutProps {
@@ -139,7 +139,7 @@ export function AddElementsPopout({ onClose, onOpenChange }: AddElementsPopoutPr
             <div className="space-y-3">
               <span className="text-[10px] font-mono uppercase text-indigo-400 tracking-wider block mb-3">Button Components</span>
               <div className="grid grid-cols-1 gap-3">
-                <PresetItem label="Standard Link Card" previewClass="text-sm font-medium" element={<CraftLinkCard title="New Link Destination" url="https://..." />} onClose={handleTriggerClose} />
+                <PresetItem label="Standard Link Card" previewClass="text-sm font-medium" element={<CraftButton buttonText="New Link Destination" url="https://..." />} onClose={handleTriggerClose} />
               </div>
             </div>
           )}
